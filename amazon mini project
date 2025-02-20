@@ -1,0 +1,164 @@
+from flask import Flask, render_template_string, request, redirect, url_for, session
+import sqlite3
+
+app = Flask(__name__)
+app.secret_key = "supersecretkey"
+
+# Database setup (SQLite)
+def init_db():
+    conn = sqlite3.connect('ecommerce.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY, name TEXT, price REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)''')
+    # Inserting some sample products for demonstration
+    c.execute("INSERT OR IGNORE INTO products (name, price) VALUES ('Laptop', 1000), ('Smartphone', 500), ('Headphones', 150)")
+    conn.commit()
+    conn.close()
+
+# Route to home page, displaying all products
+@app.route('/')
+def home():
+    conn = sqlite3.connect('ecommerce.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM products')
+    products = c.fetchall()
+    conn.close()
+
+    home_html = '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Home - E-Commerce</title>
+    </head>
+    <body>
+        <h1>Welcome to our E-Commerce Store!</h1>
+        <a href="/login">Login</a> | <a href="/cart">View Cart</a>
+        <h2>Our Products</h2>
+        <div>
+            {% for product in products %}
+                <div>
+                    <h3>{{ product[1] }}</h3>
+                    <p>Price: ${{ product[2] }}</p>
+                    <a href="/add_to_cart/{{ product[0] }}">Add to Cart</a>
+                </div>
+            {% endfor %}
+        </div>
+    </body>
+    </html>
+    '''
+    return render_template_string(home_html, products=products)
+
+# Route to display the login page
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        conn = sqlite3.connect('ecommerce.db')
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE username=? AND password=?', (username, password))
+        user = c.fetchone()
+        conn.close()
+        if user:
+            session['user'] = user[0]
+            return redirect(url_for('home'))
+        else:
+            return "Login failed. Please check your credentials."
+    login_html = '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login</title>
+    </head>
+    <body>
+        <h1>Login</h1>
+        <form action="/login" method="POST">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+    </body>
+    </html>
+    '''
+    return render_template_string(login_html)
+
+# Route to handle adding products to the cart
+@app.route('/add_to_cart/<int:product_id>')
+def add_to_cart(product_id):
+    if 'cart' not in session:
+        session['cart'] = []
+    session['cart'].append(product_id)
+    return redirect(url_for('home'))
+
+# Route to display the shopping cart
+@app.route('/cart')
+def cart():
+    if 'cart' in session:
+        cart_items = session['cart']
+        conn = sqlite3.connect('ecommerce.db')
+        c = conn.cursor()
+        products = [c.execute('SELECT * FROM products WHERE id=?', (item,)).fetchone() for item in cart_items]
+        conn.close()
+
+        cart_html = '''
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Your Cart</title>
+        </head>
+        <body>
+            <h1>Your Shopping Cart</h1>
+            <ul>
+                {% for product in products %}
+                    <li>{{ product[1] }} - ${{ product[2] }}</li>
+                {% endfor %}
+            </ul>
+            <a href="/checkout">Proceed to Checkout</a>
+        </body>
+        </html>
+        '''
+        return render_template_string(cart_html, products=products)
+    return "Your cart is empty."
+
+# Route to handle checkout (simple version)
+@app.route('/checkout')
+def checkout():
+    if 'cart' not in session:
+        return redirect(url_for('home'))
+    cart_items = session['cart']
+    conn = sqlite3.connect('ecommerce.db')
+    c = conn.cursor()
+    products = [c.execute('SELECT * FROM products WHERE id=?', (item,)).fetchone() for item in cart_items]
+    conn.close()
+
+    checkout_html = '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Checkout</title>
+    </head>
+    <body>
+        <h1>Checkout</h1>
+        <ul>
+            {% for product in products %}
+                <li>{{ product[1] }} - ${{ product[2] }}</li>
+            {% endfor %}
+        </ul>
+        <button>Confirm Purchase</button>
+    </body>
+    </html>
+    '''
+    return render_template_string(checkout_html, products=products)
+
+if __name__ == '__main__':
+    init_db()  # Initialize the database
+    app.run(debug=True)
+
